@@ -1,0 +1,55 @@
+name: Mise à jour et déploiement
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # chaque lundi à 06:00 UTC
+  push:
+    branches: [main]
+  workflow_dispatch:       # bouton "Run workflow" dans l'onglet Actions
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Régénérer la liste des APIs
+        if: github.event_name != 'push'
+        run: ./mettre-a-jour.sh
+
+      - name: Commit si la liste a changé
+        if: github.event_name != 'push'
+        run: |
+          if git diff --quiet -- data.js public-apis-liste.md; then
+            echo "Aucun changement."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data.js public-apis-liste.md
+            git commit -m "Mise à jour automatique des APIs"
+            git push
+          fi
+
+      - name: Préparer le site
+        run: |
+          mkdir _site
+          cp index.html data.js public-apis-liste.md _site/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
